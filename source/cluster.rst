@@ -146,26 +146,26 @@ emqttd消息服务器每个集群节点，都保存一份主题树(Topic Trie)�
 emqttd集群设置管理
 ------------------
 
-假设部署两台服务器s1.emqtt.io, s2.emqtt.io上部署集群:
+假设部署两台服务器s1.emqx.io, s2.emqx.io上部署集群:
 
 +-------------------------+-----------------+---------------------+
 | 节点名                  | 主机名(FQDN)    |    IP地址           |
 +-------------------------+-----------------+---------------------+
-| emqttd@s1.emqtt.io 或   | s1.emqtt.io     | 192.168.0.10        |
+| emqttd@s1.emqx.io 或   | s1.emqx.io     | 192.168.0.10        |
 | emqttd@192.168.0.10     |                 |                     |
 +-------------------------+-----------------+---------------------+
-| emqttd@s2.emqtt.io 或   | s2.emqtt.io     | 192.168.0.20        |
+| emqttd@s2.emqx.io 或   | s2.emqx.io     | 192.168.0.20        |
 | emqttd@192.168.0.20     |                 |                     |
 +-------------------------+-----------------+---------------------+
 
 .. WARNING:: 节点名格式: Name@Host, Host必须是IP地址或FQDN(主机名.域名)
 
-emqttd@s1.emqtt.io节点设置
+emqttd@s1.emqx.io节点设置
 --------------------------
 
 emqttd/etc/vm.args::
 
-    -name emqttd@s1.emqtt.io
+    -name emqttd@s1.emqx.io
 
     或
 
@@ -173,12 +173,12 @@ emqttd/etc/vm.args::
 
 .. WARNING:: 节点启动加入集群后，节点名称不能变更。
 
-emqttd@s2.emqtt.io节点设置
+emqttd@s2.emqx.io节点设置
 --------------------------
 
 emqttd/etc/vm.args::
 
-    -name emqttd@s2.emqtt.io
+    -name emqttd@s2.emqx.io
 
     或
 
@@ -188,25 +188,25 @@ emqttd/etc/vm.args::
 节点加入集群
 ------------
 
-启动两台节点后，emqttd@s2.emqtt.io上执行::
+启动两台节点后，emqttd@s2.emqx.io上执行::
 
-    $ ./bin/emqttd_ctl cluster join emqttd@s1.emqtt.io
-
-    Join the cluster successfully.
-    Cluster status: [{running_nodes,['emqttd@s1.emqtt.io','emqttd@s2.emqtt.io']}]
-
-或，emqttd@s1.emqtt.io上执行::
-
-    $ ./bin/emqttd_ctl cluster join emqttd@s2.emqtt.io
+    $ ./bin/emqttd_ctl cluster join emqttd@s1.emqx.io
 
     Join the cluster successfully.
-    Cluster status: [{running_nodes,['emqttd@s1.emqtt.io','emqttd@s2.emqtt.io']}]
+    Cluster status: [{running_nodes,['emqttd@s1.emqx.io','emqttd@s2.emqx.io']}]
+
+或，emqttd@s1.emqx.io上执行::
+
+    $ ./bin/emqttd_ctl cluster join emqttd@s2.emqx.io
+
+    Join the cluster successfully.
+    Cluster status: [{running_nodes,['emqttd@s1.emqx.io','emqttd@s2.emqx.io']}]
 
 任意节点上查询集群状态::
 
     $ ./bin/emqttd_ctl cluster status
 
-    Cluster status: [{running_nodes,['emqttd@s1.emqtt.io','emqttd@s2.emqtt.io']}]
+    Cluster status: [{running_nodes,['emqttd@s1.emqx.io','emqttd@s2.emqx.io']}]
 
 节点退出集群
 ------------
@@ -217,13 +217,13 @@ emqttd/etc/vm.args::
 
 2. remove: 从集群删除其他节点
 
-emqttd@s2.emqtt.io主动退出集群::
+emqttd@s2.emqx.io主动退出集群::
 
     $ ./bin/emqttd_ctl cluster leave
 
-或emqttd@s1.emqtt.io节点上，从集群删除emqttd@s2.emqtt.io节点::
+或emqttd@s1.emqx.io节点上，从集群删除emqttd@s2.emqx.io节点::
 
-    $ ./bin/emqttd_ctl cluster remove emqttd@s2.emqtt.io
+    $ ./bin/emqttd_ctl cluster remove emqttd@s2.emqx.io
 
 .. _cluster_session:
 

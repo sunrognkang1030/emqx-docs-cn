@@ -51,7 +51,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'emqttd-开源MQTT消息服务器'
-copyright = u'2016, 李枫, eMQTT.IO'
+copyright = u'2016, 李枫, emqx.io'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
