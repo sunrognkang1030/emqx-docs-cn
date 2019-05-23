@@ -653,7 +653,7 @@ EMQ X 消息服务器支持追踪来自某个客户端(Client)，或者发布到
 
     $ ./bin/emqx_ctl log primary-level debug
 
-    $ ./bin/emqx_ctl trace start topic "t/#" "trace_topic.log" debug
+    $ ./bin/emqx_ctl trace start topic 't/#' "trace_topic.log" debug
 
 查询追踪:
 
@@ -686,36 +686,33 @@ EMQ X 消息服务器支持追踪来自某个客户端(Client)，或者发布到
 规则引擎
 ---------
 
-规则引擎用于配置消息或事件的业务规则。使用规则引擎可以方便地实现诸如将消息筛选和转换成预置格式，并存入数据库表，或者发送到消息队列等功能。
+规则引擎用于配置事件的业务规则。使用规则引擎可以方便地实现诸如将消息筛选和转换成指定格式，并存入数据库表，或者发送到消息队列等功能。
 
-规则引擎相关的概念包括: 规则(rule)、动作(action)、资源类型(resource-type) 和 资源(resource)。
+规则引擎相关的概念包括: 规则(rule)、动作(action)、资源(resource) 和 资源类型(resource-type)。
 
 - 规则 (Rule): 规则由 SQL 语句和动作列表组成。
-  SQL 语句用于从 MQTT 消息中筛选和转换原始数据。
-  动作列表包含一个或多个动作的名字及其参数。
-  规则需要挂载到某个钩子上。挂载到 message.publish 钩子的叫做消息规则；挂载到其他钩子的规则叫做事件规则。
+  SQL 语句用于从 emqx 事件中筛选和转换原始数据。
+  动作列表包含一个或多个动作及其参数。
+  规则需要挂载到某个事件上，比如 “消息发布”，“连接完成”，“连接断开” 等。挂载事件由 SQL 语句的 “FROM” 子句完成。
 - 动作 (Action): 动作定义了一个针对数据的操作。
-  动作可以绑定资源，也可以不绑定。例如，built_in:inspect_action 动作不需要绑定资源，它只是简单打印数据内容。而 web_hook:publish_action 动作需要绑定一个 web_hook 类型的资源，此资源中配置了 URL。
-- 资源 (Resource): 资源是通过资源类型为模板实例化出来的对象，保存了与资源相关的配置(比如数据库连接地址、用户名和密码等)。
+  动作可以绑定资源，也可以不绑定。例如，“inspect” 动作不需要绑定资源，它只是简单打印数据内容和动作参数。而 “data_to_webserver” 动作需要绑定一个 web_hook 类型的资源，此资源中配置了 URL。
+- 资源 (Resource): 资源是通过资源类型为模板实例化出来的对象，保存了与资源相关的配置(比如数据库连接地址和端口、用户名和密码等)。
 - 资源类型 (Resource Type): 资源类型是资源的静态定义，描述了此类型资源需要的配置项。
 
-.. note:: 动作和资源类型是由 emqx 或插件的代码提供的，不能通过 API 和 CLI 动态创建。
+.. important:: 动作和资源类型是由 emqx 或插件的代码提供的，不能通过 API 和 CLI 动态创建。
 
 规则、动作、资源的关系::
 
     规则: {
-        钩子,
         SQL 语句,
         动作列表: [
             {
-                动作名字,
                 动作参数: {
                     参数1: 值,
                     参数2: 值,
                     ...
                 },
                 绑定资源: {
-                    资源名字,
                     资源配置项: {
                         配置项1: 值,
                         配置项2: 值,
@@ -726,62 +723,70 @@ EMQ X 消息服务器支持追踪来自某个客户端(Client)，或者发布到
         ]
     }
 
-消息规则和事件规则
->>>>>>>>>>>>>>>>>>>>
-
-一个规则需要挂载到某个钩子上，比如，挂载到 ``message.publish`` 的规则只能处理 PUBLISH 消息；挂载到 ``client.connected`` 上的规则只能处理终端上线事件。钩子可以在创建规则的时候指定。
-
-挂载了 ``message.publish`` 钩子的规则称作 ``消息规则`` ，挂载了其他钩子的规则叫做 ``事件规则``。
-
-规则引擎目前主要关注消息规则，支持通过 SQL 语句对消息进行条件筛选、预处理、转换。
-而对于事件规则，目前不支持 SQL 语句，仅提供了简单的事件转发等功能。
-
 SQL 语句
 >>>>>>>>>>>>>>
 
 SQL 语句用于从原始数据中，根据条件筛选出字段，并进行预处理和转换，基本格式为::
 
-    SELECT <字段名> FROM <消息主题> [WHERE <条件>]
+    SELECT <字段名> FROM <触发事件> [WHERE <条件>]
 
 SQL 语句示例:
 
-- 从 topic 为 "t/a" 的消息中筛选出所有字段::
+- 从 topic 为 "t/a" 的消息中提取所有字段::
 
-    SELECT * FROM "t/a"
+    SELECT * FROM "message.publish" WHERE topic = 't/a'
 
-- 从 topic 能够匹配到 "t/#" 的消息中筛选出所有字段::
+- 从 topic 能够匹配到 't/#' 的消息中提取所有字段。注意这里使用了 '=~' 操作符进行带通配符的 topic 匹配::
 
-    SELECT * FROM "t/#"
+    SELECT * FROM "message.publish" WHERE topic =~ 't/#'
 
-- 从 topic 能够匹配到 "t/#" 的消息中筛选出 qos，username 和 client_id 字段::
+- 从 topic 能够匹配到 't/#' 的消息中提取 qos，username 和 client_id 字段::
 
-    SELECT qos, username, client_id FROM "t/#"
+    SELECT qos, username, client_id FROM "message.publish" WHERE topic =~ 't/#'
 
-- 从 topic 能够匹配到 "t/#" 的消息中筛选出 username 字段，并且筛选条件为 username = 'Steven'::
+- 从任意 topic 的消息中提取 username 字段，并且筛选条件为 username = 'Steven'::
 
-    SELECT username FROM "t/#" WHERE username='Steven'
+    SELECT username FROM "message.publish" WHERE username='Steven'
 
-- 从 topic 能够匹配到 "t/#" 的 JSON 格式的消息体(payload) 中筛选出 x 字段，并创建别名 x 以便在 WHERE 子句中使用。WHERE 子句限定条件为 x = 1。此 SQL 语句可以匹配到消息体 {"x": 1}, 但不能匹配到消息体 {"x": 2}::
+- 从任意 topic 的消息的消息体(payload) 中提取 x 字段，并创建别名 x 以便在 WHERE 子句中使用。WHERE 子句限定条件为 x = 1。注意 payload 必须为 JSON 格式。举例：此 SQL 语句可以匹配到消息体 {"x": 1}, 但不能匹配到消息体 {"x": 2}::
 
-    SELECT payload.x as x FROM "t/#" WHERE x=1
+    SELECT payload.x as x FROM "message.publish" WHERE x=1
 
 - 类似于上面的 SQL 语句，但嵌套地提取消息体中的数据，此 SQL 语句可以匹配到消息体 {"x": {"y": 1}}::
 
-    SELECT payload.x.y as a FROM "t/#" WHERE a=1
+    SELECT payload.x.y as a FROM "message.publish" WHERE a=1
 
+- 在 client_id = 'c1' 尝试连接时，提取其来源 IP 地址和端口号::
 
-消息规则中，SELECT 子句可用的字段有:
+    SELECT peername as ip_port FROM "client.connected" WHERE client_id = 'c1'
+
+- 筛选所有订阅 't/#' 主题且订阅级别为 QoS1 的 client_id。注意这里用的是严格相等操作符 '='，所以不会匹配主题为 't' 或 't/+/a' 的订阅请求::
+
+    SELECT client_id FROM "client.subscribe" WHERE topic = 't/#' and qos = 1
+
+- 事实上，上例中的 topic 和 qos 字段，是当订阅请求里只包含了一对 (Topic, QoS) 时，为使用方便而设置的别名。但如果订阅请求中 Topic Filters 包含了多个 (Topic, QoS) 组合对，那么必须显式使用 contains_topic() 或 contains_topic_match() 函数来检查 Topic Filters 是否包含指定的 (Topic, QoS)::
+
+    SELECT client_id FROM "client.subscribe" WHERE contains_topic(topic_filters, 't/#')
+
+    SELECT client_id FROM "client.subscribe" WHERE contains_topic(topic_filters, 't/#', 1)
+
+SELECT 子句可用的字段:
+>>>>>>>>>>>>>>>>>>>>>>
+
+消息发布(message.publish):
 
 +-----------+------------------------------------+
 | client_id | Client ID                          |
 +-----------+------------------------------------+
 | username  | 用户名                             |
 +-----------+------------------------------------+
-| event     | 钩子类型，固定为 "message_publish" |
+| event     | 事件类型，固定为 "message.publish" |
 +-----------+------------------------------------+
 | flags     | MQTT 消息的 flags                  |
 +-----------+------------------------------------+
 | id        | MQTT 消息 ID                       |
++-----------+------------------------------------+
+| topic     | MQTT 主题                          |
 +-----------+------------------------------------+
 | payload   | MQTT 消息体                        |
 +-----------+------------------------------------+
@@ -792,13 +797,179 @@ SQL 语句示例:
 | timestamp | 时间戳                             |
 +-----------+------------------------------------+
 
-.. note:: SQL 语句目前仅用于消息规则。
+消息投递(message.deliver):
 
-.. note:: FROM 子句后面的主题名需要用双引号("") 引起来。
++-------------+------------------------------------+
+| client_id   | Client ID                          |
++-------------+------------------------------------+
+| username    | 用户名                             |
++-------------+------------------------------------+
+| event       | 事件类型，固定为 "message.deliver" |
++-------------+------------------------------------+
+| flags       | MQTT 消息的 flags                  |
++-------------+------------------------------------+
+| id          | MQTT 消息 ID                       |
++-------------+------------------------------------+
+| topic       | MQTT 主题                          |
++-------------+------------------------------------+
+| payload     | MQTT 消息体                        |
++-------------+------------------------------------+
+| peername    | 客户端的 IPAddress 和 Port         |
++-------------+------------------------------------+
+| qos         | MQTT 消息的 QoS                    |
++-------------+------------------------------------+
+| timestamp   | 时间戳                             |
++-------------+------------------------------------+
+| auth_result | 认证结果                           |
++-------------+------------------------------------+
+| mountpoint  | 消息主题挂载点                     |
++-------------+------------------------------------+
 
-.. note:: WHERE 子句后面接筛选条件，如果使用到字符串需要用单引号 ('') 引起来。
+消息确认(message.acked):
 
-.. note:: SELECT 子句中，若使用 "." 符号对 payload 进行嵌套选择，必须保证 payload 为 JSON 格式。
++-----------+----------------------------------+
+| client_id | Client ID                        |
++-----------+----------------------------------+
+| username  | 用户名                           |
++-----------+----------------------------------+
+| event     | 事件类型，固定为 "message.acked" |
++-----------+----------------------------------+
+| flags     | MQTT 消息的 flags                |
++-----------+----------------------------------+
+| id        | MQTT 消息 ID                     |
++-----------+----------------------------------+
+| topic     | MQTT 主题                        |
++-----------+----------------------------------+
+| payload   | MQTT 消息体                      |
++-----------+----------------------------------+
+| peername  | 客户端的 IPAddress 和 Port       |
++-----------+----------------------------------+
+| qos       | MQTT 消息的 QoS                  |
++-----------+----------------------------------+
+| timestamp | 时间戳                           |
++-----------+----------------------------------+
+
+消息丢弃(message.dropped):
+
++-----------+------------------------------------+
+| client_id | Client ID                          |
++-----------+------------------------------------+
+| username  | 用户名                             |
++-----------+------------------------------------+
+| event     | 事件类型，固定为 "message.dropped" |
++-----------+------------------------------------+
+| flags     | MQTT 消息的 flags                  |
++-----------+------------------------------------+
+| id        | MQTT 消息 ID                       |
++-----------+------------------------------------+
+| topic     | MQTT 主题                          |
++-----------+------------------------------------+
+| payload   | MQTT 消息体                        |
++-----------+------------------------------------+
+| peername  | 客户端的 IPAddress 和 Port         |
++-----------+------------------------------------+
+| qos       | MQTT 消息的 QoS                    |
++-----------+------------------------------------+
+| timestamp | 时间戳                             |
++-----------+------------------------------------+
+| node      | 节点名                             |
++-----------+------------------------------------+
+
+连接完成(client.connected):
+
++--------------+-------------------------------------+
+| client_id    | Client ID                           |
++--------------+-------------------------------------+
+| username     | 用户名                              |
++--------------+-------------------------------------+
+| event        | 事件类型，固定为 "client.connected" |
++--------------+-------------------------------------+
+| auth_result  | 认证结果                            |
++--------------+-------------------------------------+
+| clean_start  | MQTT clean start 标志位             |
++--------------+-------------------------------------+
+| connack      | MQTT CONNACK 结果                   |
++--------------+-------------------------------------+
+| connected_at | 连接时间戳                          |
++--------------+-------------------------------------+
+| is_bridge    | 是否是桥接                          |
++--------------+-------------------------------------+
+| keepalive    | MQTT 保活间隔                       |
++--------------+-------------------------------------+
+| mountpoint   | 消息主题挂载点                      |
++--------------+-------------------------------------+
+| peername     | 客户端的 IPAddress 和 Port          |
++--------------+-------------------------------------+
+| proto_ver    | MQTT 协议版本                       |
++--------------+-------------------------------------+
+
+
+连接断开(client.disconnected):
+
++-------------+----------------------------------------+
+| client_id   | Client ID                              |
++-------------+----------------------------------------+
+| username    | 用户名                                 |
++-------------+----------------------------------------+
+| event       | 事件类型，固定为 "client.disconnected" |
++-------------+----------------------------------------+
+| auth_result | 认证结果                               |
++-------------+----------------------------------------+
+| mountpoint  | 消息主题挂载点                         |
++-------------+----------------------------------------+
+| peername    | 客户端的 IPAddress 和 Port             |
++-------------+----------------------------------------+
+| reason_code | 断开原因码                             |
++-------------+----------------------------------------+
+
+订阅(client.subscribe):
+
++---------------+-------------------------------------+
+| client_id     | Client ID                           |
++---------------+-------------------------------------+
+| username      | 用户名                              |
++---------------+-------------------------------------+
+| event         | 事件类型，固定为 "client.subscribe" |
++---------------+-------------------------------------+
+| auth_result   | 认证结果                            |
++---------------+-------------------------------------+
+| mountpoint    | 消息主题挂载点                      |
++---------------+-------------------------------------+
+| peername      | 客户端的 IPAddress 和 Port          |
++---------------+-------------------------------------+
+| topic_filters | MQTT 订阅列表                       |
++---------------+-------------------------------------+
+| topic         | MQTT 订阅列表中的第一个订阅的主题   |
++---------------+-------------------------------------+
+| topic_filters | MQTT 订阅列表中的第一个订阅的 QoS   |
++---------------+-------------------------------------+
+
+取消订阅(client.unsubscribe):
+
++---------------+---------------------------------------+
+| client_id     | Client ID                             |
++---------------+---------------------------------------+
+| username      | 用户名                                |
++---------------+---------------------------------------+
+| event         | 事件类型，固定为 "client.unsubscribe" |
++---------------+---------------------------------------+
+| auth_result   | 认证结果                              |
++---------------+---------------------------------------+
+| mountpoint    | 消息主题挂载点                        |
++---------------+---------------------------------------+
+| peername      | 客户端的 IPAddress 和 Port            |
++---------------+---------------------------------------+
+| topic_filters | MQTT 订阅列表                         |
++---------------+---------------------------------------+
+| topic         | MQTT 订阅列表中的第一个订阅的主题     |
++---------------+---------------------------------------+
+| topic_filters | MQTT 订阅列表中的第一个订阅的 QoS     |
++---------------+---------------------------------------+
+
+.. important::
+    - FROM 子句后面的主题名需要用双引号("") 引起来。
+    - WHERE 子句后面接筛选条件，如果使用到字符串需要用单引号 ('') 引起来。
+    - SELECT 子句中，若使用 "." 符号对 payload 进行嵌套选择，必须保证 payload 为 JSON 格式。
 
 创建规则举例
 ------------
@@ -806,53 +977,55 @@ SQL 语句示例:
 例: 创建 Inspect 规则
 >>>>>>>>>>>>>>>>>>>>>>>
 
-创建一个测试规则，当任意发送到 't/a' 主题时打印筛选后的数据以及动作参数细节。
+创建一个测试规则，当有消息发送到 't/a' 主题时，打印消息内容以及动作参数细节。
 
-- 规则的筛选条件为: "SELECT * FROM \"t/a\"";
-- 动作是: "打印动作细节"，可以使用内置动作 'built_in:inspect_action'。
+- 规则的筛选 SQL 语句为: SELECT * FROM "message.publish" WHERE topic = 't/a';
+- 动作是: "打印动作参数细节"，需要使用内置动作 'inspect'。
 
 .. code-block:: shell
 
     $ ./bin/emqx_ctl rules create \
-      'test1' \
-      'message.publish' \
-      'select * from "t/a"' \
-      '[{"name":"built_in:inspect_action", "params": {"a": 1}}]' \
+      "SELECT * FROM \"message.publish\" WHERE topic = 't/a'" \
+      '[{"name":"inspect", "params": {"a": 1}}]' \
       -d 'Rule for debug'
 
-    Rule test1:1556178701774551466 created
+    Rule rule:803de6db created
 
-上面的 CLI 命令创建了一个 ID 为 'test1:1556178701774551466' 的规则。
+上面的 CLI 命令创建了一个 ID 为 'Rule rule:803de6db' 的规则。
 
-参数中前 4 个为必选项，分别是规则名字(test1)、钩子(message.publish)、SQL 语句(select * from "t/a")、动作列表([{"name":"built_in:inspect_action", "params": {"a": 1}}])。最后一个可选参数 'Rule for debug' 是规则的描述。其中动作列表是用 JSON Array 格式表示的，name 字段是动作的名字，params 字段是动作的参数。注意 ``built_in:inspect_action`` 动作是不需要绑定资源的。
+参数中前两个为必参数:
 
-接下来当发送 "hello" 消息到主题 't/a' 时，上面创建的 "test1:1556178701774551466" 规则匹配成功，然后 "built_in:inspect_action" 动作被触发，将消息和参数内容打印到 emqx 控制台::
+- SQL 语句: SELECT * FROM "message.publish" WHERE topic = 't/a'
+- 动作列表: [{"name":"inspect", "params": {"a": 1}}]。动作列表是用 JSON Array 格式表示的。name 字段是动作的名字，params 字段是动作的参数。注意 ``inspect`` 动作是不需要绑定资源的。
+
+最后一个可选参数，是规则的描述: 'Rule for debug'。
+
+接下来当发送 "hello" 消息到主题 't/a' 时，上面创建的 "Rule rule:803de6db" 规则匹配成功，然后 "inspect" 动作被触发，将消息和参数内容打印到 emqx 控制台::
 
     $ tail -f log/erlang.log.1
 
-    (emqx@127.0.0.1)1> [built_in:inspect_action]
-        Selected Data: #{client_id => <<"clientId-1111">>,
-                         event => message_publish,
+    (emqx@127.0.0.1)1> [inspect]
+        Selected Data: #{client_id => <<"shawn">>,event => 'message.publish',
                          flags => #{dup => false,retain => false},
-                         id => <<"5875619E8E728F442000007050002">>,
+                         id => <<"5898704A55D6AF4430000083D0002">>,
                          payload => <<"hello">>,
-                         peername => <<"127.0.0.1:54333">>,qos => 0,
-                         timestamp => 1556178755184,topic => <<"t/a">>,
-                         username => <<"shawn">>}
-        Envs: #{event => message_publish,
+                         peername => <<"127.0.0.1:61770">>,qos => 1,
+                         timestamp => 1558587875090,topic => <<"t/a">>,
+                         username => undefined}
+        Envs: #{event => 'message.publish',
                 flags => #{dup => false,retain => false},
-                from => <<"clientId-1111">>,
+                from => <<"shawn">>,
                 headers =>
                     #{allow_publish => true,
-                      peername => {{127,0,0,1},54333},
-                      username => <<"shawn">>},
-                id => <<0,5,135,86,25,232,231,40,244,66,0,0,7,5,0,2>>,
-                payload => <<"hello">>,qos => 0,
-                timestamp => {1556,178755,184441},
+                      peername => {{127,0,0,1},61770},
+                      username => undefined},
+                id => <<0,5,137,135,4,165,93,106,244,67,0,0,8,61,0,2>>,
+                payload => <<"hello">>,qos => 1,
+                timestamp => {1558,587875,89754},
                 topic => <<"t/a">>}
         Action Init Params: #{<<"a">> => 1}
 
-- ``Selected Data`` 列出的是消息经过 SQL 筛选后的字段，由于我们用的是 ``select *``，所以这里会列出所有可用的字段。
+- ``Selected Data`` 列出的是消息经过 SQL 筛选、提取后的字段，由于我们用的是 ``select *``，所以这里会列出所有可用的字段。
 - ``Envs`` 是动作内部可以使用的环境变量。
 - ``Action Init Params`` 是初始化动作的时候，我们传递给动作的参数。
 
@@ -860,53 +1033,55 @@ SQL 语句示例:
 例: 创建 WebHook 规则
 >>>>>>>>>>>>>>>>>>>>>>>
 
-创建一个规则："将所有发送自 client_id 'Steven' 的消息，转发到地址为 'http://127.0.0.1:9910' 的 Web 服务器":
+创建一个规则，将所有发送自 client_id='Steven' 的消息，转发到地址为 'http://127.0.0.1:9910' 的 Web 服务器:
 
-- 规则的筛选条件为: "SELECT username as u, payload FROM \"#\" where u='Steven'";
-- 动作是: "转发到地址为 'http://127.0.0.1:9910' 的 Web 服务器";
-- 资源类型是: WebHook;
+- 规则的筛选条件为: SELECT username as u, payload FROM "message.publish" where u='Steven';
+- 动作是: "转发到地址为 'http://127.0.0.1:9910' 的 Web 服务";
+- 资源类型是: web_hook;
 - 资源是: "到 url='http://127.0.0.1:9910' 的 WebHook 资源"。
 
-0. 首先我们创建一个简易 Web 服务器，这可以使用 ``nc`` 命令实现::
+0. 首先我们创建一个简易 Web 服务，这可以使用 ``nc`` 命令实现::
 
     $ echo -e "HTTP/1.1 200 OK\n\n $(date)" | nc -l localhost 9910
 
-1. 使用 WebHook 类型创建一个资源，并配置资源参数 url::
+1. 使用 WebHook 类型创建一个资源，并配置资源参数 url:
 
-    ## 1.1 列出当前所有可用的资源类型，确保 'web_hook' 资源类型已存在
+   1). 列出当前所有可用的资源类型，确保 'web_hook' 资源类型已存在::
+
     $ ./bin/emqx_ctl resource-types list
 
-    resource_type(name='built_in', provider='emqx_rule_engine', params=#{}, on_create={emqx_rule_actions,on_resource_create}, description='The built in resource type for debug purpose')
     resource_type(name='web_hook', provider='emqx_web_hook', params=#{...}}, on_create={emqx_web_hook_actions,on_resource_create}, description='WebHook Resource')
+    ...
 
-    ## 1.2 使用类型 'web_hook' 创建一个新的资源，并配置 "url"="http://127.0.0.1:9910"
+   2). 使用类型 'web_hook' 创建一个新的资源，并配置 "url"="http://127.0.0.1:9910"::
+
     $ ./bin/emqx_ctl resources create \
-      'webhook1' \
       'web_hook' \
       -c '{"url": "http://127.0.0.1:9910", "headers": {"token":"axfw34y235wrq234t4ersgw4t"}, "method": "POST"}'
 
-    Resource web_hook:webhook1 created
+    Resource resource:691c29ba created
 
-    上面的 CLI 命令创建了一个 ID 为 'web_hook:webhook1' 的资源，前两个参数分别是资源名(webhook1) 和资源类型(webhook)。参数表明此资源指向 URL = "http://127.0.0.1:9910"，方法为 POST，并且设置了一个 HTTP Header: "token"。
+   上面的 CLI 命令创建了一个 ID 为 'resource:691c29ba' 的资源，第一个参数是必选参数 - 资源类型(web_hook)。参数表明此资源指向 URL = "http://127.0.0.1:9910" 的 Web 服务，方法为 POST，并且设置了一个 HTTP Header: "token"。
 
-2. 然后创建规则，并选择规则的动作为 'web_hook:publish_action'::
+2. 然后创建规则，并选择规则的动作为 'data_to_webserver':
 
-    ## 2.1 列出当前所有可用的动作，确保 'web_hook:publish_action' 动作已存在
+   1). 列出当前所有可用的动作，确保 'data_to_webserver' 动作已存在::
+
     $ ./bin/emqx_ctl rule-actions list
 
-    action(name='web_hook:publish_action', app='emqx_web_hook', for='message.publish', type='web_hook', params=#{'$resource' => ...}}, description='Forward Messages to Web Server')
+    action(name='data_to_webserver', app='emqx_web_hook', for='$any', types=[web_hook], params=#{'$resource' => ...}, title ='Data to Web Server', description='Forward Messages to Web Server')
     ...
 
-    ## 2.2 创建名为 steven_msg_to_http 的规则，选择 web_hook:publish_action 动作，
-    ##     并通过"$resource" 参数将 web_hook:webhook1 资源绑定到动作上。
+   2). 创建规则，选择 data_to_webserver 动作，并通过 "$resource" 参数将 resource:691c29ba 资源绑定到动作上::
+
     $ ./bin/emqx_ctl rules create \
-     'steven_msg_to_http' \
-     'message.publish' \
-     "SELECT username as u, payload FROM \"#\" where u='Steven'" \
-     '[{"name":"web_hook:publish_action", "params": {"$resource":  "web_hook:webhook1"}}]' \
+     "SELECT username as u, payload FROM \"message.publish\" where u='Steven'" \
+     '[{"name":"data_to_webserver", "params": {"$resource":  "resource:691c29ba"}}]' \
      -d "Forward publish msgs from steven to webserver"
 
-     上面的 CLI 命令与我们第一个例子里创建 Inspect 规则时类似，区别在于这里需要把刚才创建的资源 'web_hook:webhook1' 绑定到 'web_hook:publish_action' 动作上。这个绑定通过给动作设置一个特殊的参数 '$resource' 完成。'web_hook:publish_action' 动作的作用是将数据发送到指定的 Web 服务器。
+    rule:26d84768
+
+   上面的 CLI 命令与第一个例子里创建 Inspect 规则时类似，区别在于这里需要把刚才创建的资源 'resource:691c29ba' 绑定到 'data_to_webserver' 动作上。这个绑定通过给动作设置一个特殊的参数 '$resource' 完成。'data_to_webserver' 动作的作用是将数据发送到指定的 Web 服务器。
 
 3. 现在我们使用 username "Steven" 发送 "hello" 到任意主题，上面创建的规则就会被触发，Web Server 收到消息并回复 200 OK::
 
@@ -921,3 +1096,106 @@ SQL 语句示例:
     token: axfw34y235wrq234t4ersgw4t
 
     {"payload":"hello","u":"Steven"}
+
+例: 创建 MySQL 规则
+>>>>>>>>>>>>>>>>>>>>>>>
+
+0. 搭建 MySQL 数据库，并设置用户名密码为 root/public，以 MacOS X 为例::
+
+    $ brew install mysql
+
+    $ brew services start mysql
+
+    $ mysql -u root -h localhost -p
+
+      ALTER USER 'root'@'localhost' IDENTIFIED BY 'public';
+
+1. 初始化 MySQL 表:
+
+  $ mysql -u root -h localhost -ppublic
+
+  创建 “test” 数据库::
+
+    CREATE DATABASE test;
+
+  创建 “t_mqtt_msg” 表::
+
+    USE test;
+
+    CREATE TABLE `t_mqtt_msg` (
+    `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+    `msgid` varchar(64) DEFAULT NULL,
+    `topic` varchar(255) NOT NULL,
+    `qos` tinyint(1) NOT NULL DEFAULT '0',
+    `payload` blob,
+    `arrived` datetime NOT NULL,
+    PRIMARY KEY (`id`),
+    INDEX topic_index(`id`, `topic`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8MB4;
+
+  .. image:: ./_static/images/mysql_init_1@2x.png
+
+2. 创建规则:
+
+  打开 `emqx dashboard <http://127.0.0.1:18083/#/rules>`_，选择左侧的 “规则” 选项卡。
+
+  选择触发事件 “消息发布”，然后填写规则 SQL::
+
+    SELECT * FROM "message.pubish"
+
+  .. image:: ./_static/images/rule_sql_1@2x.png
+
+3. 关联动作:
+
+  在 “响应动作” 界面选择 “添加”，然后在 “动作” 下拉框里选择 “发送数据到 MySQL”。
+
+  .. image:: ./_static/images/rule_action_1@2x.png
+
+4. 填写动作参数:
+
+  “发送数据到 MySQL” 动作需要两个参数：
+
+  1). SQL 模板。这个例子里我们向 MySQL 插入一条数据，SQL 模板为::
+
+    insert into t_mqtt_msg(msgid, topic, qos, payload, arrived) values (${id}, ${topic}, ${qos}, ${payload}, FROM_UNIXTIME(${timestamp}/1000))
+
+  .. image:: ./_static/images/rule_action_2@2x.png
+
+  2). 关联资源的 ID。现在资源下拉框为空，可以点击右上角的 “新建资源” 来创建一个 MySQL 资源:
+
+  .. image:: ./_static/images/rule_action_3@2x.png
+
+  选择 “MySQL 资源”。
+
+5. 填写资源配置:
+
+  数据库名填写 “test”，用户名填写 “root”，密码填写 “publish”，备注为 “MySQL resource to 127.0.0.1:3306 db=test”
+
+  .. image:: ./_static/images/rule_resource_1@2x.png
+
+  点击 “新建” 按钮。
+
+6. 返回响应动作界面，点击 “确认”。
+
+  .. image:: ./_static/images/rule_action_4@2x.png
+
+7. 返回规则创建界面，点击 “新建”。
+
+  .. image:: ./_static/images/rule_overview_1@2x.png
+
+  在规则列表里，点击 “查看” 按钮或规则 ID 连接，可以预览刚才创建的规则:
+
+  .. image:: ./_static/images/rule_overview_2@2x.png
+
+8. 规则已经创建完成，现在发一条数据:
+
+    Topic: "t/a"
+
+    QoS: 1
+
+    Payload: "hello"
+
+  然后检查 MySQL 表，新的 record 是否添加成功:
+
+  .. image:: ./_static/images/mysql_result_1@2x.png
+
